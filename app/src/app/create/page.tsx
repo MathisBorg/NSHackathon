@@ -32,6 +32,7 @@ import {
 } from "@/lib/spl-helpers";
 import { generateBurner, keypairToBase58 } from "@/lib/burner-wallet";
 import { registerPseudo } from "@/lib/pseudo-client";
+import { cleanError } from "@/lib/error-format";
 
 type Side = "yes" | "no";
 
@@ -203,7 +204,7 @@ export default function CreateBetPage() {
       setTimeout(() => router.push(`/bet/${vaultId.toString()}`), 800);
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }

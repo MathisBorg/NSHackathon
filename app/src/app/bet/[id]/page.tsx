@@ -54,6 +54,7 @@ import {
   keypairToBase58,
 } from "@/lib/burner-wallet";
 import { registerPseudo, fetchPseudos } from "@/lib/pseudo-client";
+import { cleanError } from "@/lib/error-format";
 
 type VaultData = {
   authority: string;
@@ -280,7 +281,7 @@ export default function BetDetailPage({
         }
       } catch (e) {
         if (!cancelled)
-          setError(e instanceof Error ? e.message : String(e));
+          setError(cleanError(e));
       }
     })();
     return () => {
@@ -761,7 +762,7 @@ function MatchBetSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }
@@ -966,7 +967,7 @@ function LaunchSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }
@@ -1095,7 +1096,7 @@ function ClaimSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }
@@ -1151,7 +1152,7 @@ function ResolveSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(null);
     }
@@ -1258,7 +1259,7 @@ function RedeemSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }
@@ -1509,7 +1510,7 @@ function TradePanelSection({
       onSuccess();
     } catch (e) {
       console.error(e);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
     } finally {
       setSubmitting(false);
     }
@@ -1890,7 +1891,7 @@ function JoinAudienceScreen({ vaultId }: { vaultId: string }) {
       const cleanUrl = window.location.origin + window.location.pathname;
       window.location.replace(cleanUrl);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
       setSubmitting(false);
     }
   }
@@ -2090,7 +2091,7 @@ function ClaimBurnerScreen({
         window.location.origin + window.location.pathname;
       window.location.replace(cleanUrl);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cleanError(e));
       setSubmitting(false);
     }
   }
