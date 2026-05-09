@@ -2645,45 +2645,120 @@ function LeaderboardSection({
         })()}
       </div>
 
-      {/* Fees breakdown — visible always; clearer at resolution. */}
-      {(audienceBetsTotalUnits > 0n || platformFeesUnits > 0n) && (
+      {/* Money-flow breakdown: where every $ went. Visible when we have
+          data (post-launch). Most informative after resolution. */}
+      {(rows.length > 0 || platformFeesUnits > 0n) && (
         <div className="mt-5 pt-4 border-t border-gray-200 text-xs space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
-            Fees collected
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
+            Where the money went
           </div>
           {(() => {
-            // LP fee = audience bets × 0.99 × 0.01 (≈ 1% of stated bets).
-            // Approximate via × 0.0099. Display in $.
-            const lpFeeUnits =
-              (audienceBetsTotalUnits * BigInt(LP_FEE_BPS)) / 10_000n;
-            // Account for the platform fee being deducted FIRST: lp fee
-            // applies to (bet × 0.99). Multiply by 0.99 too.
-            const lpFeeUnitsAdj =
-              (lpFeeUnits * BigInt(10_000 - PLATFORM_FEE_BPS)) / 10_000n;
-            const lpUsd = unitsToDisplayUsd(lpFeeUnitsAdj);
+            // Sum of all stated bets (commits + audience).
+            const totalInUnits = rows.reduce(
+              (s, r) => s + r.betUnits,
+              0n,
+            );
+            let totalYesLocal = 0n;
+            let totalNoLocal = 0n;
+            for (const r of rows) {
+              totalYesLocal += r.yesUnits;
+              totalNoLocal += r.noUnits;
+            }
+            // Winners' actual cash-out (face value × pro-rata ratio).
+            let winnersOutUsd = 0;
+            if (resolved) {
+              const totalCirc = winningOutcome
+                ? totalYesLocal
+                : totalNoLocal;
+              const ratio =
+                totalCirc > 0n
+                  ? Math.min(
+                      1,
+                      Number(effectiveCollateralUnits) /
+                        Number(totalCirc),
+                    )
+                  : 1;
+              for (const r of rows) {
+                const winUnits = winningOutcome ? r.yesUnits : r.noUnits;
+                winnersOutUsd += unitsToDisplayUsd(winUnits) * ratio;
+              }
+            }
+            const totalInUsd = unitsToDisplayUsd(totalInUnits);
             const platformUsd = unitsToDisplayUsd(platformFeesUnits);
+            // LP profit (claimable by OGs via remove_liquidity) =
+            // pool_collateral - winners_payout. Includes both the
+            // explicit 1% LP fee and the AMM curve spread.
+            const lpProfitUsd = resolved
+              ? Math.max(
+                  0,
+                  unitsToDisplayUsd(effectiveCollateralUnits) -
+                    winnersOutUsd,
+                )
+              : (() => {
+                  const lpFeeUnits =
+                    (audienceBetsTotalUnits * BigInt(LP_FEE_BPS)) /
+                    10_000n;
+                  return unitsToDisplayUsd(
+                    (lpFeeUnits * BigInt(10_000 - PLATFORM_FEE_BPS)) /
+                      10_000n,
+                  );
+                })();
             const ogs = rows.filter((r) => r.committed);
+            const ogsLabel =
+              ogs.length > 0
+                ? ` (${ogs.map((r) => r.pseudo).join(" + ")})`
+                : "";
             return (
               <>
+                <div className="flex justify-between font-medium">
+                  <span className="text-gray-900">Total bet</span>
+                  <span className="font-mono text-gray-900">
+                    {formatUsd(totalInUsd)}
+                  </span>
+                </div>
+                {resolved && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">→ Winners cash out</span>
+                    <span className="font-mono text-gray-900">
+                      {formatUsd(winnersOutUsd)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-700">
-                    LP fee → OG committers
-                    {ogs.length > 0 && (
-                      <span className="text-gray-500">
-                        {" "}({ogs.map((r) => r.pseudo).join(" + ")})
-                      </span>
-                    )}
+                    → LP profit{ogsLabel}
+                    <span className="text-gray-500">
+                      {" "}— in pool, claimable by OGs
+                    </span>
                   </span>
                   <span className="font-mono text-gray-900">
-                    {formatUsd(lpUsd)}
+                    {formatUsd(lpProfitUsd)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-700">Platform fee</span>
+                  <span className="text-gray-700">→ Platform</span>
                   <span className="font-mono text-gray-900">
                     {formatUsd(platformUsd)}
                   </span>
                 </div>
+                {resolved && (
+                  <div className="flex justify-between border-t border-gray-200 pt-1.5 mt-1 text-[10px] text-gray-500 uppercase tracking-wide">
+                    <span>Sum</span>
+                    <span className="font-mono">
+                      {formatUsd(
+                        winnersOutUsd + lpProfitUsd + platformUsd,
+                      )}{" "}
+                      ✓
+                    </span>
+                  </div>
+                )}
+                {resolved && (
+                  <div className="text-[10px] text-gray-500 leading-snug pt-1">
+                    LP profit = explicit 1% LP fee + AMM curve spread.
+                    OGs ({ogs.map((r) => r.pseudo).join(", ") || "—"}) can
+                    claim it via remove_liquidity (not exposed in this UI).
+                  </div>
+                )}
               </>
             );
           })()}
