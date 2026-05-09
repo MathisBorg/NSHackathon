@@ -116,6 +116,11 @@ export default function BetDetailPage({
   const [userNoUnits, setUserNoUnits] = useState<bigint>(0n);
   const [userUsdgUnits, setUserUsdgUnits] = useState<bigint>(0n);
   const [userTrackedBetUnits, setUserTrackedBetUnits] = useState<bigint>(0n);
+  const [yesBetTotalUnits, setYesBetTotalUnits] = useState<bigint>(0n);
+  const [noBetTotalUnits, setNoBetTotalUnits] = useState<bigint>(0n);
+  const [priceHistory, setPriceHistory] = useState<
+    { t: number; p: number }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [shareUrl, setShareUrl] = useState("");
@@ -143,6 +148,18 @@ export default function BetDetailPage({
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // Sample the live yes price into a rolling buffer for the chart.
+  useEffect(() => {
+    if (!pool) return;
+    setPriceHistory((prev) => {
+      const next = [
+        ...prev,
+        { t: Date.now(), p: pool.yesPrice },
+      ];
+      return next.length > 240 ? next.slice(-240) : next;
+    });
+  }, [pool]);
 
   useEffect(() => {
     if (!program) return;
@@ -194,14 +211,21 @@ export default function BetDetailPage({
           const bal = await fetchBal(program.provider.connection, usdgAta);
           if (!cancelled) setUserUsdgUnits(bal);
 
-          // User's tracked audience bets (cumulative)
+          // User's tracked audience bets (cumulative) + per-side totals.
           try {
             const r = await fetch(`/api/bet-track?vault=${id}`);
             if (r.ok) {
               const j = await r.json();
               const v = j.bets?.[publicKey.toBase58()];
-              if (!cancelled)
+              if (!cancelled) {
                 setUserTrackedBetUnits(v ? BigInt(v) : 0n);
+                setYesBetTotalUnits(
+                  j.sideTotals?.yes ? BigInt(j.sideTotals.yes) : 0n,
+                );
+                setNoBetTotalUnits(
+                  j.sideTotals?.no ? BigInt(j.sideTotals.no) : 0n,
+                );
+              }
             }
           } catch {
             /* best-effort */
@@ -559,17 +583,42 @@ export default function BetDetailPage({
                 <span>Live odds</span>
                 <span>updates every 3s</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <PriceCard
-                  label="YES"
-                  pct={pool.yesPrice * 100}
-                  color="green"
-                />
-                <PriceCard
-                  label="NO"
-                  pct={(1 - pool.yesPrice) * 100}
-                  color="red"
-                />
+              {priceHistory.length > 1 && (
+                <YesPriceChart history={priceHistory} />
+              )}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div>
+                  <PriceCard
+                    label="YES"
+                    pct={pool.yesPrice * 100}
+                    color="green"
+                  />
+                  <div className="text-[11px] text-gray-500 font-mono text-center mt-1">
+                    {formatUsd(
+                      unitsToDisplayUsd(
+                        BigInt(vault.yesTotal.toString()) +
+                          yesBetTotalUnits,
+                      ),
+                    )}{" "}
+                    bet
+                  </div>
+                </div>
+                <div>
+                  <PriceCard
+                    label="NO"
+                    pct={(1 - pool.yesPrice) * 100}
+                    color="red"
+                  />
+                  <div className="text-[11px] text-gray-500 font-mono text-center mt-1">
+                    {formatUsd(
+                      unitsToDisplayUsd(
+                        BigInt(vault.noTotal.toString()) +
+                          noBetTotalUnits,
+                      ),
+                    )}{" "}
+                    bet
+                  </div>
+                </div>
               </div>
               <div className="mt-3 h-1.5 rounded overflow-hidden bg-gray-100 flex">
                 <div
@@ -1301,6 +1350,64 @@ type PoolAcc = {
   };
 };
 
+function YesPriceChart({
+  history,
+}: {
+  history: { t: number; p: number }[];
+}) {
+  if (history.length < 2) return null;
+  const W = 600;
+  const H = 80;
+  const PAD = 4;
+  const minT = history[0].t;
+  const maxT = history[history.length - 1].t;
+  const tRange = Math.max(1, maxT - minT);
+  const pts = history.map(({ t, p }) => {
+    const x = PAD + ((t - minT) / tRange) * (W - 2 * PAD);
+    const y = PAD + (1 - p) * (H - 2 * PAD); // invert: 100% at top
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const polyline = pts.join(" ");
+  const last = history[history.length - 1].p;
+  // Area under the line (filled green)
+  const areaPts = `${PAD},${H - PAD} ${polyline} ${(W - PAD).toFixed(1)},${H - PAD}`;
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="w-full h-20 mt-2"
+    >
+      {/* gridlines */}
+      <line
+        x1={PAD}
+        y1={H / 2}
+        x2={W - PAD}
+        y2={H / 2}
+        stroke="#e5e7eb"
+        strokeWidth={0.5}
+        strokeDasharray="3 3"
+      />
+      <polygon
+        points={areaPts}
+        fill="rgba(34, 197, 94, 0.10)"
+      />
+      <polyline
+        points={polyline}
+        fill="none"
+        stroke="#22c55e"
+        strokeWidth={1.5}
+      />
+      {/* end marker */}
+      <circle
+        cx={W - PAD}
+        cy={PAD + (1 - last) * (H - 2 * PAD)}
+        r={3}
+        fill="#22c55e"
+      />
+    </svg>
+  );
+}
+
 function PriceCard({
   label,
   pct,
@@ -1490,6 +1597,7 @@ function TradePanelSection({
             vault: vaultId,
             pubkey: publicKey.toBase58(),
             units: totalUnits.toString(),
+            side, // "yes" or "no" — for per-side bet totals
           }),
         });
         await fetch("/api/platform-fees", {
